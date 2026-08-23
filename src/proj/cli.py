@@ -1,0 +1,111 @@
+# src/proj/cli.py
+# Q4 Day2:统一启动入口
+# Q5 Day2:加 --task 参数
+# Q5 Day3:加 --task-file / --task-name(单文件加载)
+# Q5 Day4:加 --tasks-dir(目录扫描模式)
+#
+# 用法:python -m src.proj.cli [simple|thread|pool|pro] \
+#       [--task=<name> | --task-file=<path> --task-name=<func> | --tasks-dir=<dir>]
+# 不带参数 = 打印菜单
+
+import os
+import sys
+import argparse
+
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
+from src.proj.core.echo_server import STYLES, set_current_task
+from src.proj.core.task import BUILTIN_TASKS, load_task_from_file, scan_tasks_dir, get_task
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="src.proj.cli",
+        description="Proj 统一 server 启动入口(Q5 Day4:支持 --tasks-dir)",
+    )
+    parser.add_argument(
+        "style",
+        nargs="?",
+        choices=list(STYLES.keys()) + ["menu"],
+        default="menu",
+        help="server 并发风格(默认 menu 打印菜单)",
+    )
+    parser.add_argument(
+        "--task",
+        default="",   # 空 = 用户没指定,后续默认 echo
+        help="任务类型(默认 echo);在 --tasks-dir 模式下格式为 '文件名::函数名'",
+    )
+    # Q5 Day3
+    parser.add_argument(
+        "--task-file", default=None,
+        help="外部 task .py 文件路径(配合 --task-name)",
+    )
+    parser.add_argument(
+        "--task-name", default=None,
+        help="外部 task 函数名(--task-file 模式下必填)",
+    )
+    # Q5 Day4
+    parser.add_argument(
+        "--tasks-dir", default=None,
+        help="扫描目录下的所有 .py 作为 task(--task 填 '文件名::函数名')",
+    )
+    args = parser.parse_args()
+
+    # --task-file 和 --tasks-dir 互斥(--task 在两者模式下都用来指定具体 task 名)
+    if args.task_file and args.tasks_dir:
+        parser.error("--task-file 和 --tasks-dir 互斥")
+    if args.tasks_dir and not args.task:
+        parser.error("--tasks-dir 模式下必须 --task=<file>::<func>")
+
+    if args.task_file and not args.task_name:
+        parser.error("--task-file 必须配合 --task-name")
+
+    if args.style == "menu":
+        print("=" * 60)
+        print("  Proj server 启动菜单(Q5 Day4)")
+        print("=" * 60)
+        for k, fn in STYLES.items():
+            label = {
+                "simple": "串行 socket",
+                "thread": "手搓多线程",
+                "pool":   "ThreadingMixIn",
+                "pro":    "终极版(PID+日志)",
+            }[k]
+            print(f"  [{k:7}] {label}")
+        print()
+        print("  任务模式:")
+        print("    内置:   --task=echo | upper | lower | reverse | count")
+        print("    单文件: --task-file=<path> --task-name=<func>")
+        print("    目录:   --tasks-dir=<dir>  (--task=<file>::<func>)")
+        print("=" * 60)
+        return 0
+
+    # 解析最终 task
+    if args.task_file:
+        task = load_task_from_file(args.task_file, args.task_name)
+        task_label = f"{args.task_file}::{args.task_name}"
+        set_current_task(task)
+    elif args.tasks_dir:
+        scanned = scan_tasks_dir(args.tasks_dir)
+        if args.task not in scanned:
+            print(f"[cli] --tasks-dir={args.tasks_dir} 下没找到 task '{args.task}'")
+            print(f"[cli] 可用的: {list(scanned.keys())}")
+            return 1
+        task = scanned[args.task]
+        task_label = args.task
+        set_current_task(task)
+    else:
+        task_label = args.task or "echo"  # 没指定 = 默认 echo
+        # 内置 task 不用注入,_resolve_task 会回退到 get_task
+
+    print(f"[cli] 启动风格: {args.style}  task: {task_label}", flush=True)
+    STYLES[args.style](args.task or "echo")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
