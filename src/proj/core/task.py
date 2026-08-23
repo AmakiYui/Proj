@@ -188,3 +188,120 @@ def scan_tasks_dir(dir_path: str) -> dict[str, Task]:
                 continue
 
     return found
+
+
+# ============================================================
+# Q6 Day2:JSON 协议 task(structured dict 契约)
+# ============================================================
+# 设计要点:
+#   1. 不破坏 Task = bytes -> bytes 老契约(向后兼容)
+#   2. 新契约 Task2 = dict -> dict,纯函数
+#   3. 输入输出都通过 json.dumps / json.loads 转换
+#   4. "q" 协议不在这里(Q5 Day4 已决定留在 serve_loop)
+#
+# 协议格式(Q6 Day2 默认):
+#   请求: {"action": "<task_name>", "text": "<原文>"}
+#   响应: {<task_name>: "<结果>"}  例 echo→{"echo": "hi"}
+#
+# 用法(json mode):
+#   1. 客户端发: {"action":"echo","text":"hi"}\n
+#   2. server 解析 dict → 调 json_echo_task(dict) → 收 dict
+#   3. server 序列化 dict → 发回: {"echo":"hi"}\n
+# ============================================================
+
+import json
+
+
+# Task2:结构化 dict 契约
+Task2 = Callable[[dict], dict]
+
+
+def json_echo_task(data: dict) -> dict:
+    """JSON echo:{"action":"echo","text":"hi"} → {"echo":"hi"}"""
+    return {"echo": data.get("text", "")}
+
+
+def json_upper_task(data: dict) -> dict:
+    """JSON upper:{"action":"upper","text":"hi"} → {"upper":"HI"}"""
+    return {"upper": data.get("text", "").upper()}
+
+
+def json_reverse_task(data: dict) -> dict:
+    """JSON reverse:{"action":"reverse","text":"hi"} → {"reverse":"ih"}"""
+    return {"reverse": data.get("text", "")[::-1]}
+
+
+# JSON 内置任务集
+BUILTIN_TASKS_JSON = {
+    "echo":    json_echo_task,
+    "upper":   json_upper_task,
+    "reverse": json_reverse_task,
+}
+
+
+def get_json_task(name: str) -> Task2:
+    """按名字取 JSON task。未知名字 = 默认 json_echo_task。"""
+    return BUILTIN_TASKS_JSON.get(name, json_echo_task)
+
+
+def bytes_to_dict(b: bytes) -> dict:
+    """bytes → dict(json.loads + utf-8)。"""
+    return json.loads(b.decode("utf-8"))
+
+
+def dict_to_bytes(d: dict) -> bytes:
+    """dict → bytes(json.dumps + utf-8)。"""
+    return json.dumps(d, ensure_ascii=False).encode("utf-8")
+
+
+# ============================================================
+# Q6 Day3:JSON 请求校验器(最小 schema)
+# ============================================================
+# 设计要点:
+#   1. 返回 (bool, str) 元组,不抛异常(Q6 Day3 决策:优雅路径)
+#   2. 校验规则最小化:dict + action(str) + text(str)
+#   3. 不在这里校验 action 是否合法(Day4 的话题)
+#
+# 客户端行为:
+#   ok=True  → 继续调 task
+#   ok=False → 直接返回 {"error": err_msg}
+# ============================================================
+
+def validate_request(
+    d: dict,
+    allowed_actions: set[str] | None = None,
+) -> tuple[bool, str]:
+    """校验 JSON 请求格式。
+
+    返回:
+        (True, "")        校验通过
+        (False, "<reason>") 校验失败 + 错误信息
+
+    规则:
+        - d 必须是 dict
+        - d["action"] 必须存在且是字符串
+        - d["text"]   必须存在且是字符串(可空字符串)
+        - d["action"] 必须在 allowed_actions 白名单里(Q6 Day4,可选)
+
+    allowed_actions=None 时不校验 action 是否合法(向后兼容 Day3 行为)。
+    """
+    if not isinstance(d, dict):
+        return False, "request must be a dict"
+    if "action" not in d or not isinstance(d["action"], str):
+        return False, "request.action must be a string"
+    if "text" not in d or not isinstance(d["text"], str):
+        return False, "request.text must be a string"
+    if allowed_actions is not None and d["action"] not in allowed_actions:
+        return False, f"action {d['action']!r} not allowed"
+    return True, ""
+
+
+# Q6 Day4:错误码常量(集中地,避免散落数字)
+ERR_BAD_REQUEST = 400    # 协议/schema 错误
+ERR_UNKNOWN_ACTION = 404 # action 不在白名单
+ERR_BAD_JSON = 400       # json 解析失败(复用 BAD_REQUEST 数字)
+
+
+def make_error(code: int, message: str) -> dict:
+    """统一错误格式:{"error":{"code":<int>,"message":"<str>"}}"""
+    return {"error": {"code": code, "message": message}}

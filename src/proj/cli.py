@@ -19,7 +19,20 @@ except Exception:
     pass
 
 from src.proj.core.echo_server import STYLES, set_current_task
-from src.proj.core.task import BUILTIN_TASKS, load_task_from_file, scan_tasks_dir, get_task
+from src.proj.core.task import (
+    BUILTIN_TASKS, load_task_from_file, scan_tasks_dir, get_task,
+    BUILTIN_TASKS_JSON, get_json_task, Task2,
+)
+import logging
+
+# Q6 Day3 补 logger(Q11 观提前介入):记录协议错误
+_logger = logging.getLogger("proj.cli.json")
+# 确保 logger 有 handler(没 basicConfig 时 WARNING 默认丢)
+if not _logger.handlers:
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+    _logger.addHandler(_h)
+    _logger.setLevel(logging.WARNING)
 
 
 def main():
@@ -52,6 +65,12 @@ def main():
     parser.add_argument(
         "--tasks-dir", default=None,
         help="扫描目录下的所有 .py 作为 task(--task 填 '文件名::函数名')",
+    )
+    # Q6 Day2:数据格式(bytes 旧 / json 新)
+    parser.add_argument(
+        "--data-format", default="bytes",
+        choices=["bytes", "json"],
+        help="数据格式(bytes 老 / json 结构化新,默认 bytes)",
     )
     args = parser.parse_args()
 
@@ -98,9 +117,39 @@ def main():
         task = scanned[args.task]
         task_label = args.task
         set_current_task(task)
+    elif args.data_format == "json":
+        # Q6 Day2:JSON 模式——把 dict→dict task 包成 bytes→bytes
+        # Q6 Day3:加 schema 校验 + logger
+        # Q6 Day4:加 action 白名单 + 错误码字段
+        from src.proj.core.task import (
+            bytes_to_dict, dict_to_bytes, validate_request,
+            make_error, ERR_BAD_REQUEST, ERR_UNKNOWN_ACTION,
+        )
+        json_inner = get_json_task(args.task or "echo")
+        # Q6 Day4:用 BUILTIN_TASKS_JSON.keys() 当白名单
+        allowed = set(BUILTIN_TASKS_JSON.keys())
+
+        def json_wrapper(data: bytes) -> bytes:
+            try:
+                d = bytes_to_dict(data)
+            except Exception as e:
+                _logger.warning(f"json decode failed: {e}  raw={data!r}")
+                return dict_to_bytes(make_error(ERR_BAD_REQUEST, f"json decode failed: {e}"))
+            ok, err = validate_request(d, allowed_actions=allowed)
+            if not ok:
+                _logger.warning(f"validate failed: {err}  req={d}")
+                # Q6 Day4:区分 400(BAD_REQUEST) vs 404(UNKNOWN_ACTION)
+                code = ERR_UNKNOWN_ACTION if "not allowed" in err else ERR_BAD_REQUEST
+                return dict_to_bytes(make_error(code, err))
+            result = json_inner(d)
+            return dict_to_bytes(result)
+
+        task = json_wrapper
+        task_label = f"json:{args.task or 'echo'}"
+        set_current_task(task)
     else:
         task_label = args.task or "echo"  # 没指定 = 默认 echo
-        # 内置 task 不用注入,_resolve_task 会回退到 get_task
+        # 内置 bytes task 不用注入,_resolve_task 会回退到 get_task
 
     print(f"[cli] 启动风格: {args.style}  task: {task_label}", flush=True)
     STYLES[args.style](args.task or "echo")
