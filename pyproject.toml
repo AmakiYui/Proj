@@ -1,0 +1,70 @@
+# pyproject.toml -- Q7 Day2-3 完全版 packaging
+# ============================================================
+# PEP 621 标准 + setuptools 后端
+# 让 pip install -e . 能跑,discover_entry_points() 才能激活
+# ============================================================
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# ============================================================
+# [project] 段:项目元信息
+# ============================================================
+[project]
+name = "proj"
+version = "0.1.0"
+description = "Proj:14问14维分析法学习产出(教学用 sock + task + plugins 演示项目)"
+readme = "docs/api.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "AmakiYui", email = "noreply@example.com" },
+]
+keywords = ["education", "socket", "task", "plugins", "14questions"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+]
+
+# ============================================================
+# entry_points:第三方插件挂载点(Q7 Day2-3)
+# ============================================================
+# 格式: <group> = <name> = <importable.module>:<callable>
+# proj.plugins 组的 task 会被 proj.discover_entry_points() 自动发现
+# 注意:内置插件在 src/proj/plugins/builtins.py(随包打包)
+
+[project.entry-points."proj.plugins"]
+shout        = "proj.plugins.builtins:shout"
+whisper      = "proj.plugins.builtins:whisper"
+greet_hello  = "proj.plugins.builtins:hello"
+greet_bye    = "proj.plugins.builtins:bye"
+math_double  = "proj.plugins.builtins:double"
+math_len     = "proj.plugins.builtins:len_count"
+
+# ============================================================
+# scripts:命令行入口
+# ============================================================
+# 因为 package-dir = { "" = "src" },入口是 proj.cli:main
+# 装完后 cmd 里直接敲 `proj` 就能跑(等价 python -m proj.cli)
+
+[project.scripts]
+proj = "proj.cli:main"
+
+# ============================================================
+# [tool.setuptools] 段:打包配置
+# ============================================================
+[tool.setuptools]
+# src-layout 标准
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["proj*"]
+# md/ 是工具脚本目录,不打包(纯开发用)

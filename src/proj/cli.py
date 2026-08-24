@@ -18,8 +18,8 @@ try:
 except Exception:
     pass
 
-from src.proj.core.echo_server import STYLES, set_current_task
-from src.proj.core.task import (
+from .core.echo_server import STYLES, set_current_task
+from .core.task import (
     BUILTIN_TASKS, load_task_from_file, scan_tasks_dir, get_task,
     BUILTIN_TASKS_JSON, get_json_task, Task2,
 )
@@ -121,7 +121,7 @@ def main():
         # Q6 Day2:JSON 模式——把 dict→dict task 包成 bytes→bytes
         # Q6 Day3:加 schema 校验 + logger
         # Q6 Day4:加 action 白名单 + 错误码字段
-        from src.proj.core.task import (
+        from .core.task import (
             bytes_to_dict, dict_to_bytes, validate_request,
             make_error, ERR_BAD_REQUEST, ERR_UNKNOWN_ACTION,
         )

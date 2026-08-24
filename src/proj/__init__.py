@@ -26,14 +26,26 @@
 
 __version__ = "0.1.0"  # Q7 Day1:惯例
 
-# 1. 公共 task 符号(Q5/Q6 全部契约)
+# 1. 公共 task 符号(Q5/Q6/Q7 全部契约)
 from .core.task import (
     Task, Task2,
     BUILTIN_TASKS, BUILTIN_TASKS_JSON,
     get_task, get_json_task,
     load_task_from_file, scan_tasks_dir,
     ERR_BAD_REQUEST, ERR_UNKNOWN_ACTION, ERR_BAD_JSON,
+    ERR_FORMAT_V2,  # Q7 Day2-2(v1 没有这个常量,直接走 make_error)
     make_error,
+    make_error_v2,  # Q7 Day2-2
+)
+
+# 2. 插件 API(Q7 Day2-3 完全版)
+from .plugin_loader import (
+    register_task,
+    unregister_task,
+    get_plugin_tasks,
+    scan_plugins_dir,
+    discover_entry_points,
+    clear_plugins,
 )
 
 # 2. 启动入口
@@ -62,5 +74,9 @@ __all__ = [
     "get_task", "get_json_task",
     "load_task_from_file", "scan_tasks_dir",
     "ERR_BAD_REQUEST", "ERR_UNKNOWN_ACTION", "ERR_BAD_JSON",
-    "make_error",
+    "ERR_FORMAT_V2",
+    "make_error", "make_error_v2",
+    # Q7 Day2-3 插件
+    "register_task", "unregister_task", "get_plugin_tasks",
+    "scan_plugins_dir", "discover_entry_points", "clear_plugins",
 ]

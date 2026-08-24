@@ -22,8 +22,8 @@ try:
 except Exception:
     pass
 
-from src.proj import _config as cfg
-from src.proj.core.task import Task, get_task
+from .. import _config as cfg
+from .task import Task, get_task
 
 
 # ============================================================

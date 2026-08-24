@@ -302,6 +302,77 @@ ERR_UNKNOWN_ACTION = 404 # action 不在白名单
 ERR_BAD_JSON = 400       # json 解析失败(复用 BAD_REQUEST 数字)
 
 
+# Q7 Day2-2:错误格式版本常量(避免魔法数字,只用于 make_error_v2)
+ERR_FORMAT_V2 = 2   # {"error":{"code","message","request_id","timestamp","details"}}
+
+
 def make_error(code: int, message: str) -> dict:
-    """统一错误格式:{"error":{"code":<int>,"message":"<str>"}}"""
+    """统一错误格式 v1(Q6 Day4 原行为)。
+
+    格式:{"error":{"code":<int>,"message":"<str>"}}
+
+    v2 协议请用 make_error_v2()。
+    """
     return {"error": {"code": code, "message": message}}
+
+
+def make_error_v2(
+    code: int,
+    message: str,
+    *,
+    request_id: str | None = None,
+    auto_request_id: bool = True,
+    timestamp: int | None = None,
+    auto_timestamp: bool = True,
+    details: dict | None = None,
+) -> dict:
+    """统一错误格式 v2(Q7 Day2-2 新增)。
+
+    格式:{"error":{"code","message","request_id","timestamp","details"}}
+
+    request_id / timestamp 自动生成规则(Q7 Day2-3 完整 UUID):
+        - request_id=None, auto_request_id=True  → 自动生成完整 UUID4(默认)
+        - request_id="<str>", auto_request_id=... → 用调用者传的字符串
+        - request_id=None, auto_request_id=False  → 不输出该字段
+
+    timestamp 同理:
+        - timestamp=None, auto_timestamp=True    → 自动生成当前时间 ms
+        - timestamp=<int>, auto_timestamp=...    → 用调用者传的
+        - timestamp=None, auto_timestamp=False   → 不输出该字段
+
+    details:可选,None 时不输出。
+
+    参数:
+        code:             错误码(用 ERR_* 常量)
+        message:          错误描述(给人看的)
+        request_id:       请求追踪 ID(None + auto_request_id=True 时自动生成 UUID4)
+        auto_request_id:  是否自动生成 request_id(默认 True)
+        timestamp:        错误发生时间戳 ms(None + auto_timestamp=True 时自动取当前 ms)
+        auto_timestamp:   是否自动生成 timestamp(默认 True)
+        details:          附加结构化信息(可选,如 {"field": "action", "expected": "str"})
+
+    返回:
+        dict — 直接 dict_to_bytes() 发回客户端即可
+    """
+    import uuid as _uuid
+    import time as _time
+
+    err: dict = {"code": code, "message": message}
+
+    # request_id
+    if request_id is not None:
+        err["request_id"] = request_id
+    elif auto_request_id:
+        err["request_id"] = str(_uuid.uuid4())
+
+    # timestamp
+    if timestamp is not None:
+        err["timestamp"] = timestamp
+    elif auto_timestamp:
+        err["timestamp"] = int(_time.time() * 1000)
+
+    # details
+    if details is not None:
+        err["details"] = details
+
+    return {"error": err}

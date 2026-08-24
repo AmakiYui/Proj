@@ -21,6 +21,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# --- pip 安装元数据(pip install -e . 生成) ---
+*.egg-info/
+*.egg
+
 # --- 编辑器/系统文件 ---
 .vscode/
 .idea/
