@@ -24,6 +24,9 @@ from .core.task import (
     BUILTIN_TASKS_JSON, get_json_task, Task2,
     ERR_TASK_NOT_FOUND, ERR_BAD_SIGNATURE, err_message, make_error_v2,
 )
+from .health_check import check_server, format_check_result
+from .client_pool import ClientPool, parse_endpoints
+from . import __version__  # Q9 Day3: --version 参数需要
 import logging
 
 # Q6 Day3 补 logger(Q11 观提前介入):记录协议错误
@@ -40,6 +43,37 @@ def main():
     parser = argparse.ArgumentParser(
         prog="src.proj.cli",
         description="Proj 统一 server 启动入口(Q5 Day4:支持 --tasks-dir)",
+        epilog=f"当前版本: proj {__version__}",
+    )
+    # Q9 Day3: 标准 --version(Q9 演:版本可发现)
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"proj {__version__}",
+    )
+    # Q12 Day2:健康检查模式(子进程检查 server 是否活着)
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="Q12:对运行中的 server 发 HEALTH 命令,退出码 0=健康 / 1=down",
+    )
+    # Q12 Day2:host/port 覆盖(默认从环境变量 PROJ_HOST/PROJ_PORT)
+    parser.add_argument(
+        "--host", default=None,
+        help="Q12:server host(默认 127.0.0.1,可用 PROJ_HOST 环境变量)",
+    )
+    parser.add_argument(
+        "--port", type=int, default=None,
+        help="Q12:server port(默认 8765,可用 PROJ_PORT 环境变量)",
+    )
+    # Q14 Day2:多 host 模式(客户端走 client pool)
+    parser.add_argument(
+        "--hosts", default=None,
+        help="Q14:多 server 地址列表,逗号分隔如 'h1:p1,h2:p2',走 client pool",
+    )
+    parser.add_argument(
+        "--client-message", default=None,
+        help="Q14:--hosts 模式下发的内容(默认发 'hello from pool')",
     )
     parser.add_argument(
         "style",
@@ -74,6 +108,41 @@ def main():
         help="数据格式(bytes 老 / json 结构化新,默认 bytes)",
     )
     args = parser.parse_args()
+
+    # Q12 Day2:健康检查分支(短路径,直接 exit)
+    if args.health_check:
+        from . import _config as cfg
+        host = args.host or os.environ.get("PROJ_HOST") or cfg.HOST
+        port = args.port or int(os.environ.get("PROJ_PORT", "0")) or cfg.PORT
+        ok, payload = check_server(host=host, port=port, timeout=5.0)
+        print(format_check_result(ok, payload), flush=True)
+        return 0 if ok else 1
+
+    # Q14 Day2:client pool 模式(短路径)
+    if args.hosts:
+        endpoints = parse_endpoints(args.hosts)
+        pool = ClientPool(endpoints)
+        msg = (args.client_message or "hello from pool").encode("utf-8") + b"\n"
+        try:
+            resp = pool.send(msg)
+            print(f"[pool] -> {resp.decode('utf-8', 'replace').strip()}", flush=True)
+            print(f"[pool] endpoints: {pool.alive_endpoints()}", flush=True)
+            return 0
+        except ConnectionError as e:
+            print(f"[pool] FAILED: {e}", flush=True)
+            return 1
+
+    # Q12 Day2:host/port 环境变量覆盖(Q12 部 怎么部署)
+    # 服务端启动时读取 PROJ_HOST/PROJ_PORT,_config 默认值兜底
+    if args.host or os.environ.get("PROJ_HOST"):
+        from . import _config as cfg
+        cfg.HOST = args.host or os.environ["PROJ_HOST"]
+    if args.port or os.environ.get("PROJ_PORT"):
+        from . import _config as cfg
+        try:
+            cfg.PORT = args.port or int(os.environ["PROJ_PORT"])
+        except ValueError:
+            parser.error(f"invalid PROJ_PORT: {os.environ['PROJ_PORT']}")
 
     # --task-file 和 --tasks-dir 互斥(--task 在两者模式下都用来指定具体 task 名)
     if args.task_file and args.tasks_dir:

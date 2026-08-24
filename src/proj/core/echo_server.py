@@ -12,6 +12,7 @@
 
 import os
 import sys
+import time
 import socket
 import threading
 import socketserver
@@ -23,6 +24,9 @@ except Exception:
     pass
 
 from .. import _config as cfg
+from ..health_check import init_server_start_time, health_check_handler
+from ..observability import get_registry
+from ..security import safe_recv, set_recv_timeout
 from .task import Task, get_task, safe_call_task, ERR_TASK_EXCEPTION, ERR_INTERNAL
 from .task import make_error_v2, err_message, dict_to_bytes
 
@@ -44,11 +48,40 @@ def serve_loop(conn, addr, task: Task, prefix: str = "echo") -> None:
         - task 调用走 safe_call_task(task, data),捕获 task 异常
         - 出错不回 OK,改发 ERR_FORMAT_V2 错误响应(dict→bytes)
         - 不 break,连接继续收下一个请求(任务异常≠连接异常)
+
+    Q11 Day2 改造:
+        - 每次请求 inc 4 个 metric(连接/请求/错误/延迟)
+        - 用 get_registry() 全局共享,关闭则 metric 不增
+        - 请求延迟用 Histogram observe(简单分桶)
+
+    Q12 Day2 改造:
+        - 加 HEALTH 命令(走协议层,跟 "q" 同级,不污染 task)
+        - 启动时 init_server_start_time() 记录 uptime
     """
     print(f"[{prefix}-{addr[1]}] start", flush=True)
+    # Q10 Day2:加 socket 超时(防 Slowloris)
+    set_recv_timeout(conn, seconds=30.0)
+    # Q12 Day2:首次连接时记录 server 启动时间(uptime 起点)
+    init_server_start_time()
+
+    # Q11 Day2:拿 4 个 metric 句柄
+    _reg = get_registry()
+    _conn_total = _reg.counter("connections_total", "total connections accepted")
+    _req_total = _reg.counter("requests_total", "total requests handled")
+    _err_total = _reg.counter("errors_total", "total error responses sent")
+    _active = _reg.gauge("active_connections", "current open connections")
+    _latency = _reg.histogram("request_duration_ms", "request processing time")
+
+    _conn_total.inc()
+    _active.inc()
     try:
         while True:
-            data = conn.recv(1024)
+            # Q10 Day2:用 safe_recv 代替裸 conn.recv(1024)
+            # - 上限 64KB(防内存爆炸)
+            # - 返回 None 表示对端关闭/出错
+            data = safe_recv(conn)
+            if data is None:
+                break
             if not data:
                 break
             msg = data.decode("utf-8", "replace").strip()
@@ -57,9 +90,17 @@ def serve_loop(conn, addr, task: Task, prefix: str = "echo") -> None:
                 # 不污染 task 契约(task 保持纯 bytes -> bytes,不背退出信号)。
                 conn.sendall(b"bye\n")
                 break
+            if msg.upper() == "HEALTH":
+                # Q12 Day2:健康检查协议,跟 "q" 同一层级
+                conn.sendall(health_check_handler())
+                continue  # HEALTH 不算请求,不动 metrics
             # Q8 Day2:用 safe_call_task 包 task 调用
             # 返回 (out_bytes, error_code):成功 (out, 0),失败 ("", 5xx)
+            # Q11 Day2:加延迟统计
+            _t0 = time.perf_counter()
             out, code = safe_call_task(task, data.rstrip(b"\r\n"))
+            _latency.observe((time.perf_counter() - _t0) * 1000.0)
+            _req_total.inc()
             if code == 0:
                 conn.sendall(out + b"\n")
             else:
@@ -68,7 +109,9 @@ def serve_loop(conn, addr, task: Task, prefix: str = "echo") -> None:
                 err_msg = err_message(code)
                 err_resp = make_error_v2(code, err_msg)
                 conn.sendall(dict_to_bytes(err_resp) + b"\n")
+                _err_total.inc()
     finally:
+        _active.dec()
         conn.close()
         print(f"[{prefix}-{addr[1]}] closed", flush=True)
 

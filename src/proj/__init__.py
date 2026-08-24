@@ -54,7 +54,60 @@ from .plugin_loader import (
     clear_plugins,
 )
 
-# 2. 启动入口
+# 3. 安全 API(Q10 Day2 直接开发版)
+from .security import (
+    safe_recv,
+    set_recv_timeout,
+    compute_plugin_signature,
+    verify_plugin_signature,
+    load_manifest,
+    DEFAULT_MAX_RECV,
+    DEFAULT_ALLOWED_ENTRY_POINT_GROUPS,
+    get_logger as get_security_logger,
+)
+
+# 4. 可观测 API(Q11 Day2 直接开发版)
+from .observability import (
+    Counter,
+    Gauge,
+    Histogram,
+    Registry,
+    get_registry,
+    reset_registry,
+    dump_metrics,
+)
+
+# 5. 日志配置(Q11 Day2)
+from .log_setup import setup_logging, get_proj_logger
+
+# 6. 健康检查(Q12 Day2)
+from .health_check import (
+    init_server_start_time,
+    health_check_handler,
+    check_server,
+    format_check_result,
+)
+
+# 7. 缓存(Q13 Day2)
+from .memoize import memoize_task, memoize_builtin_tasks
+
+# 8. 协同(Q14 Day2)
+from .client_pool import ClientPool, ServerEndpoint, parse_endpoints
+from .process_pool import call_in_subprocess, SafeTask
+from .alert import AlertEngine, get_default_engine, DEFAULT_THRESHOLDS
+
+# 9. MVF 模板骨架(Q1 Day2 — 14 问升维)
+from . import mvf as _mvf_module
+from .mvf.template_factory import generate_scaffold, Scaffold
+from .mvf.known_projects import KNOWN_PROJECTS, is_known, get_fills
+from .mvf.compare import compare_projects, compare_all
+
+# 10. Pipeline A1:想法 -> MVF(Q1 Day2 扩展)
+from . import pipeline as _pipeline_module
+from .pipeline.idea_parser import parse_idea, IdeaToMVFError, HEURISTIC_Q_KEYWORDS
+from .pipeline.idea_cli import format_mvf_md
+
+# 10. 启动入口
 from .cli import main
 
 # 3. 兜底清理(防 from .X import Y 把 X 注进当前包 namespace)
@@ -91,4 +144,29 @@ __all__ = [
     # Q7 Day2-3 插件
     "register_task", "unregister_task", "get_plugin_tasks",
     "scan_plugins_dir", "discover_entry_points", "clear_plugins",
+    # Q10 Day2 安全
+    "safe_recv", "set_recv_timeout",
+    "compute_plugin_signature", "verify_plugin_signature", "load_manifest",
+    "DEFAULT_MAX_RECV", "DEFAULT_ALLOWED_ENTRY_POINT_GROUPS",
+    "get_security_logger",
+    # Q11 Day2 可观测
+    "Counter", "Gauge", "Histogram", "Registry",
+    "get_registry", "reset_registry", "dump_metrics",
+    "setup_logging", "get_proj_logger",
+    # Q12 Day2 部署
+    "init_server_start_time", "health_check_handler",
+    "check_server", "format_check_result",
+    # Q13 Day2 性能
+    "memoize_task", "memoize_builtin_tasks",
+    # Q14 Day2 协同
+    "ClientPool", "ServerEndpoint", "parse_endpoints",
+    "call_in_subprocess", "SafeTask",
+    "AlertEngine", "get_default_engine", "DEFAULT_THRESHOLDS",
+    # Q1 Day2 MVF 模板
+    "generate_scaffold", "Scaffold",
+    "KNOWN_PROJECTS", "is_known", "get_fills",
+    "compare_projects", "compare_all",
+    # Q1 Day2 Pipeline A1
+    "parse_idea", "IdeaToMVFError", "HEURISTIC_Q_KEYWORDS",
+    "format_mvf_md",
 ]

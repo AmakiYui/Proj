@@ -15,9 +15,9 @@ build-backend = "setuptools.build_meta"
 name = "proj"
 version = "0.1.0"
 description = "Proj:14问14维分析法学习产出(教学用 sock + task + plugins 演示项目)"
-readme = "docs/api.md"
+readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
 authors = [
     { name = "AmakiYui", email = "noreply@example.com" },
 ]
@@ -25,7 +25,6 @@ keywords = ["education", "socket", "task", "plugins", "14questions"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Education",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
