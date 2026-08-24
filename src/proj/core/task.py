@@ -301,9 +301,147 @@ ERR_BAD_REQUEST = 400    # 协议/schema 错误
 ERR_UNKNOWN_ACTION = 404 # action 不在白名单
 ERR_BAD_JSON = 400       # json 解析失败(复用 BAD_REQUEST 数字)
 
+# Q8 Day2:7 类错误码(HTTP 风格分类)
+# 4xx = 客户端错(请求本身有问题)
+ERR_TASK_NOT_FOUND = 404   # task 不存在(覆盖 bytes task 找不到 + 文件找不到 + 目录找不到)
+ERR_BAD_SIGNATURE = 422    # 函数签名不对(load_task_from_file 的 TypeError)
+
+# 5xx = 服务端错(server 自己出错)
+ERR_TASK_EXCEPTION = 500   # task 函数本身抛异常(Q8 Day2 关键产出:safe_call_task)
+ERR_BIND_FAILED = 500      # socket bind 失败(端口占用,Q8 Day2:safe_bind)
+ERR_INTERNAL = 500         # 兜底(其他未预期的)
+
 
 # Q7 Day2-2:错误格式版本常量(避免魔法数字,只用于 make_error_v2)
 ERR_FORMAT_V2 = 2   # {"error":{"code","message","request_id","timestamp","details"}}
+
+# Q8 Day2:7 类错误码的人类描述(给 make_error_v2 的 message 字段用)
+# key 是 (code, name) 元组,避免 5xx 同 code 互覆盖
+ERR_MESSAGES = {
+    (ERR_BAD_REQUEST, "BAD_REQUEST"): "bad request",
+    (ERR_UNKNOWN_ACTION, "UNKNOWN_ACTION"): "unknown action",
+    (ERR_BAD_JSON, "BAD_JSON"): "bad json",
+    (ERR_TASK_NOT_FOUND, "TASK_NOT_FOUND"): "task not found",
+    (ERR_BAD_SIGNATURE, "BAD_SIGNATURE"): "bad task signature",
+    (ERR_TASK_EXCEPTION, "TASK_EXCEPTION"): "task raised an exception",
+    (ERR_BIND_FAILED, "BIND_FAILED"): "bind failed",
+    (ERR_INTERNAL, "INTERNAL"): "internal server error",
+}
+
+
+def err_message(code: int, name: str | None = None) -> str:
+    """查 (code, name) 找人类可读 message,找不到回 ERR_INTERNAL 兜底。
+
+    用法:
+        err_message(ERR_TASK_EXCEPTION)           # 默认拿第一个匹配
+        err_message(ERR_TASK_EXCEPTION, "TASK_EXCEPTION")  # 精确查
+    """
+    if name is not None and (code, name) in ERR_MESSAGES:
+        return ERR_MESSAGES[(code, name)]
+    # code 兜底(同 code 取第一个)
+    for (c, _n), msg in ERR_MESSAGES.items():
+        if c == code:
+            return msg
+    return ERR_MESSAGES[(ERR_INTERNAL, "INTERNAL")]
+
+
+# ============================================================
+# Q8 Day2:安全调用 task(核心错误防护层)
+# ============================================================
+# 设计要点:
+#   1. 把 task 函数本身的异常吃住,不让它崩掉 serve_loop
+#   2. 返回 (out_bytes, error_code) 元组,调用方不需要 try-except
+#   3. 不修改 task 契约,Task 仍然是 bytes -> bytes
+#   4. 异常被 logger.warning 记录(Q6 Day3 logger 复用)
+#
+# 使用场景:
+#   serve_loop 调 task 时,外面包一层 safe_call_task
+#   out, code = safe_call_task(task, data)
+#   if code != 0:
+#       # 出错了,code 是 ERR_xxx(500 系列)
+#       conn.sendall(make_error_v2(code, ...))
+#       # 不 break,继续收下一个请求(连接还活着)
+#   else:
+#       conn.sendall(out)
+# ============================================================
+
+import logging as _logging
+_logger_task = _logging.getLogger("proj.core.task.safe")
+if not _logger_task.handlers:
+    _h = _logging.StreamHandler()
+    _h.setFormatter(_logging.Formatter("[%(name)s] %(levelname)s: %(message)s"))
+    _logger_task.addHandler(_h)
+    _logger_task.setLevel(_logging.WARNING)
+
+
+def safe_call_task(task: "Task", data: bytes) -> tuple[bytes, int]:
+    """安全调用 task 函数,捕获所有异常。
+
+    返回:
+        (out_bytes, error_code)
+        - 成功:(<task 输出>, 0)
+        - 失败:(b"", ERR_TASK_EXCEPTION 或 ERR_INTERNAL)
+
+    错误码语义:
+        0          → 成功
+        ERR_TASK_EXCEPTION(500) → task 函数抛的已知类型异常
+        ERR_INTERNAL(500)       → 其它未预期异常(兜底)
+    """
+    try:
+        out = task(data)
+        return out, 0
+    except Exception as e:
+        # 已知业务异常:task 自己 raise 的(比如 ValidationError)
+        _logger_task.warning(f"task raised: {type(e).__name__}: {e}")
+        return b"", ERR_TASK_EXCEPTION
+    except BaseException as e:
+        # 未预期(KeyboardInterrupt / SystemExit / MemoryError 等)
+        # 这些不该被吃,但安全层至少记一笔
+        _logger_task.error(f"task raised BaseException: {type(e).__name__}: {e}")
+        return b"", ERR_INTERNAL
+
+
+# ============================================================
+# Q8 Day2:safe_bind(端口占用防护)
+# ============================================================
+# 设计要点:
+#   1. bind 失败时自动尝试下一个端口(直到 max_retries)
+#   2. 端口占用给 OSError,errno=98(EADDRINUSE)或 10048(WSAEADDRINUSE Windows)
+#   3. 其它 bind 错(权限、地址族)直接抛
+#
+# 使用:
+#   sock = safe_bind(host, port, max_retries=3)
+# ============================================================
+
+def safe_bind(host: str, port: int, max_retries: int = 3) -> "socket.socket":
+    """尝试 bind 端口,失败时自动重试下一个端口。
+
+    返回:
+        成功绑定的 socket
+
+    抛异常:
+        OSError: 重试 max_retries 次后仍失败(端口全占用)
+    """
+    import socket as _socket
+    last_err = None
+    for attempt in range(max_retries):
+        try_port = port + attempt
+        sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
+        sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind((host, try_port))
+            sock.listen(5)
+            return sock
+        except OSError as e:
+            last_err = e
+            sock.close()
+            # EADDRINUSE(98 on Linux, 10048 on Windows) → 端口占用,继续重试
+            # 其它 OSError(权限 / 地址族) → 直接抛
+            errno = getattr(e, 'errno', None)
+            if errno not in (98, 10048, None):  # None 是 Windows 上某些情况
+                raise
+            continue
+    raise OSError(f"bind failed after {max_retries} retries on {host}:{port}-{port+max_retries-1}: {last_err}")
 
 
 def make_error(code: int, message: str) -> dict:

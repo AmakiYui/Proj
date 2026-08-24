@@ -24,10 +24,12 @@ assert err2['error']['timestamp'] == 1787538629185
 assert err2['error']['details']['field'] == 'action'
 
 print()
-print('=== make_error_v2() 部分字段(None 不输出) ===')
+print('=== make_error_v2() 部分字段(auto_xxx=False 不输出) ===')
+# Q8 Day2 修复:timestamp 默认自动输出,要用 auto_timestamp=False 才关
 err3 = proj.make_error_v2(
     proj.ERR_BAD_REQUEST, 'msg3',
     request_id='r-only',
+    auto_timestamp=False,
 )
 print(json.dumps(err3, indent=2, ensure_ascii=False))
 assert 'request_id' in err3['error']
@@ -35,8 +37,13 @@ assert 'timestamp' not in err3['error']
 assert 'details' not in err3['error']
 
 print()
-print('=== make_error_v2() 全 None 字段(只剩 code/message) ===')
-err4 = proj.make_error_v2(proj.ERR_BAD_REQUEST, 'msg4')
+print('=== make_error_v2() 全 auto=False 字段(只剩 code/message) ===')
+# Q8 Day2 修复:默认 auto_request_id/auto_timestamp 都是 True,全关才能只剩 code/message
+err4 = proj.make_error_v2(
+    proj.ERR_BAD_REQUEST, 'msg4',
+    auto_request_id=False,
+    auto_timestamp=False,
+)
 print(json.dumps(err4, indent=2, ensure_ascii=False))
 assert set(err4['error'].keys()) == {'code', 'message'}
 

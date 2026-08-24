@@ -28,8 +28,14 @@ print('试试:`proj menu` 会打印启动菜单')
 
 # 把 subprocess 也跑一下确认 `proj` 命令能跑
 import subprocess
+# Q8 Day2 修复:Windows cp1252 编码无法直接 text=True 解码中文 stdout
+# 改用 bytes 模式 + 手动 utf-8 解码,失败回退 GBK
 try:
-    out = subprocess.check_output(['proj', 'menu'], text=True, timeout=5)
+    raw = subprocess.check_output(['proj', 'menu'], timeout=5)
+    try:
+        out = raw.decode('utf-8')
+    except UnicodeDecodeError:
+        out = raw.decode('gbk', errors='replace')
     print()
     print('=== proj menu 输出 ===')
     print(out[:500])

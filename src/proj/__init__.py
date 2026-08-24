@@ -33,9 +33,15 @@ from .core.task import (
     get_task, get_json_task,
     load_task_from_file, scan_tasks_dir,
     ERR_BAD_REQUEST, ERR_UNKNOWN_ACTION, ERR_BAD_JSON,
+    ERR_TASK_NOT_FOUND, ERR_BAD_SIGNATURE,  # Q8 Day2 新增(7 类错误码之 2)
+    ERR_TASK_EXCEPTION, ERR_BIND_FAILED, ERR_INTERNAL,  # Q8 Day2 新增(5xx 系列)
+    ERR_MESSAGES,  # Q8 Day2 新增(7 类错误的 message 表)
     ERR_FORMAT_V2,  # Q7 Day2-2(v1 没有这个常量,直接走 make_error)
     make_error,
     make_error_v2,  # Q7 Day2-2
+    safe_call_task,  # Q8 Day2 新增(任务异常防护)
+    safe_bind,       # Q8 Day2 新增(端口占用防护)
+    err_message,     # Q8 Day2 新增(5xx 区分查表)
 )
 
 # 2. 插件 API(Q7 Day2-3 完全版)
@@ -73,9 +79,15 @@ __all__ = [
     "BUILTIN_TASKS", "BUILTIN_TASKS_JSON",
     "get_task", "get_json_task",
     "load_task_from_file", "scan_tasks_dir",
+    # Q8 Day2:7 类错误码(4xx + 5xx)
     "ERR_BAD_REQUEST", "ERR_UNKNOWN_ACTION", "ERR_BAD_JSON",
+    "ERR_TASK_NOT_FOUND", "ERR_BAD_SIGNATURE",
+    "ERR_TASK_EXCEPTION", "ERR_BIND_FAILED", "ERR_INTERNAL",
+    "ERR_MESSAGES",
     "ERR_FORMAT_V2",
     "make_error", "make_error_v2",
+    # Q8 Day2:异常防护层
+    "safe_call_task", "safe_bind", "err_message",
     # Q7 Day2-3 插件
     "register_task", "unregister_task", "get_plugin_tasks",
     "scan_plugins_dir", "discover_entry_points", "clear_plugins",

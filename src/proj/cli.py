@@ -22,6 +22,7 @@ from .core.echo_server import STYLES, set_current_task
 from .core.task import (
     BUILTIN_TASKS, load_task_from_file, scan_tasks_dir, get_task,
     BUILTIN_TASKS_JSON, get_json_task, Task2,
+    ERR_TASK_NOT_FOUND, ERR_BAD_SIGNATURE, err_message, make_error_v2,
 )
 import logging
 
@@ -105,14 +106,46 @@ def main():
 
     # 解析最终 task
     if args.task_file:
-        task = load_task_from_file(args.task_file, args.task_name)
+        # Q8 Day2:文件 / 函数不存在给统一错误码,不再让进程崩
+        try:
+            task = load_task_from_file(args.task_file, args.task_name)
+        except FileNotFoundError as e:
+            err = make_error_v2(ERR_TASK_NOT_FOUND, err_message(ERR_TASK_NOT_FOUND, "TASK_NOT_FOUND"),
+                                details={"file": args.task_file, "hint": "check --task-file path"})
+            print(f"[cli] ERR {err}", flush=True)
+            return 1
+        except AttributeError as e:
+            err = make_error_v2(ERR_TASK_NOT_FOUND, err_message(ERR_TASK_NOT_FOUND, "TASK_NOT_FOUND"),
+                                details={"file": args.task_file, "func": args.task_name,
+                                         "hint": "check --task-name spelling"})
+            print(f"[cli] ERR {err}", flush=True)
+            return 1
+        except TypeError as e:
+            # 签名不对(参数数量不对)
+            err = make_error_v2(ERR_BAD_SIGNATURE, err_message(ERR_BAD_SIGNATURE, "BAD_SIGNATURE"),
+                                details={"file": args.task_file, "func": args.task_name,
+                                         "expected": "(bytes) -> bytes",
+                                         "reason": str(e)})
+            print(f"[cli] ERR {err}", flush=True)
+            return 1
         task_label = f"{args.task_file}::{args.task_name}"
         set_current_task(task)
     elif args.tasks_dir:
-        scanned = scan_tasks_dir(args.tasks_dir)
+        # Q8 Day2:目录不存在给统一错误码
+        try:
+            scanned = scan_tasks_dir(args.tasks_dir)
+        except FileNotFoundError as e:
+            err = make_error_v2(ERR_TASK_NOT_FOUND, err_message(ERR_TASK_NOT_FOUND, "TASK_NOT_FOUND"),
+                                details={"dir": args.tasks_dir, "hint": "check --tasks-dir path"})
+            print(f"[cli] ERR {err}", flush=True)
+            return 1
         if args.task not in scanned:
-            print(f"[cli] --tasks-dir={args.tasks_dir} 下没找到 task '{args.task}'")
-            print(f"[cli] 可用的: {list(scanned.keys())}")
+            # Q8 Day2:已知 task 不在扫描结果里,统一错误码
+            err = make_error_v2(ERR_TASK_NOT_FOUND, err_message(ERR_TASK_NOT_FOUND, "TASK_NOT_FOUND"),
+                                details={"requested": args.task,
+                                         "available": list(scanned.keys())[:10],
+                                         "hint": "use --task=<file>::<func>"})
+            print(f"[cli] ERR {err}", flush=True)
             return 1
         task = scanned[args.task]
         task_label = args.task

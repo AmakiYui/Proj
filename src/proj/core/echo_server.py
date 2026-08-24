@@ -23,7 +23,8 @@ except Exception:
     pass
 
 from .. import _config as cfg
-from .task import Task, get_task
+from .task import Task, get_task, safe_call_task, ERR_TASK_EXCEPTION, ERR_INTERNAL
+from .task import make_error_v2, err_message, dict_to_bytes
 
 
 # ============================================================
@@ -38,6 +39,11 @@ def serve_loop(conn, addr, task: Task, prefix: str = "echo") -> None:
     - 不知道 task 在做什么,只知道"接到字节 → 给 task"
 
     Q5 Day4 决定:"q" 留在 serve_loop,理由见下方 __doc__
+
+    Q8 Day2 改造:
+        - task 调用走 safe_call_task(task, data),捕获 task 异常
+        - 出错不回 OK,改发 ERR_FORMAT_V2 错误响应(dict→bytes)
+        - 不 break,连接继续收下一个请求(任务异常≠连接异常)
     """
     print(f"[{prefix}-{addr[1]}] start", flush=True)
     try:
@@ -51,10 +57,17 @@ def serve_loop(conn, addr, task: Task, prefix: str = "echo") -> None:
                 # 不污染 task 契约(task 保持纯 bytes -> bytes,不背退出信号)。
                 conn.sendall(b"bye\n")
                 break
-            # 这里调 task:把 task 应该处理的字节交给它
-            # Q5 Day1 暂用 msg(去掉了"echo: "前缀),保持协议最简
-            out = task(data.rstrip(b"\r\n"))
-            conn.sendall(out + b"\n")
+            # Q8 Day2:用 safe_call_task 包 task 调用
+            # 返回 (out_bytes, error_code):成功 (out, 0),失败 ("", 5xx)
+            out, code = safe_call_task(task, data.rstrip(b"\r\n"))
+            if code == 0:
+                conn.sendall(out + b"\n")
+            else:
+                # 5xx 系列 → 发 ERR_FORMAT_V2 错误响应,不杀连接
+                # Q8 Day2 修复:用 err_message(code, name) 精确查,避免 5xx 同 code 互覆盖
+                err_msg = err_message(code)
+                err_resp = make_error_v2(code, err_msg)
+                conn.sendall(dict_to_bytes(err_resp) + b"\n")
     finally:
         conn.close()
         print(f"[{prefix}-{addr[1]}] closed", flush=True)
